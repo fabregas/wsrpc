@@ -1,12 +1,17 @@
-package main
+package wsrpc
 
 import (
 	"fmt"
 	"math/rand"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
+)
+
+var (
+	ClosedConnError = fmt.Errorf("closed connection")
 )
 
 func init() {
@@ -14,47 +19,69 @@ func init() {
 }
 
 type WsTransport struct {
-	in     chan *Packet
-	out    chan *Packet
-	closed chan error
+	in       chan *Packet
+	closedCh chan error
+	wlock    sync.Mutex
 
-	conn      *websocket.Conn
-	pongWait  time.Duration
-	writeWait time.Duration
+	conn       *websocket.Conn
+	pingTicker *time.Ticker
+	pongWait   time.Duration
+	writeWait  time.Duration
 }
 
 func NewWsTransport(c *websocket.Conn) *WsTransport {
+	pongWait := 60 * time.Second  //FIXME
+	writeWait := 10 * time.Second //FIXME
+
+	rp := time.Duration((rand.Intn(20) + 70))
+	pingPeriod := (pongWait * rp) / 100
+	ticker := time.NewTicker(pingPeriod)
+
 	t := &WsTransport{
-		in:        make(chan *Packet),
-		out:       make(chan *Packet),
-		closed:    make(chan error),
-		conn:      c,
-		pongWait:  60 * time.Second, //FIXME
-		writeWait: 10 * time.Second, //FIXME
+		in:         make(chan *Packet),
+		closedCh:   make(chan error),
+		conn:       c,
+		pingTicker: ticker,
+		pongWait:   pongWait,
+		writeWait:  writeWait,
 	}
 	go t.readLoop()
-	go t.writeLoop()
+	go t.pingLoop()
 	return t
 }
 
 func (t *WsTransport) Recv() <-chan *Packet {
 	return t.in
 }
+
 func (t *WsTransport) Send(p *Packet) error {
-	t.out <- p
-	//	return t.conn.WriteMessage(websocket.BinaryMessage, p.Dump())
+	buf := p.Dump()
+
+	t.wlock.Lock()
+	t.conn.SetWriteDeadline(time.Now().Add(t.writeWait))
+	err := t.conn.WriteMessage(websocket.BinaryMessage, buf)
+	t.wlock.Unlock()
+
+	if err != nil {
+		if err == websocket.ErrCloseSent {
+			t.conn.Close()
+			return ClosedConnError
+		}
+		return err
+	}
 	return nil
 }
 
 func (t *WsTransport) Close() error {
-	//	t.closed <- nil
-	//	return nil
+	t.wlock.Lock()
 	t.conn.WriteMessage(websocket.CloseMessage, []byte{})
+	t.wlock.Unlock()
+
 	return t.conn.Close()
 }
 
 func (t *WsTransport) Closed() <-chan error {
-	return t.closed
+	return t.closedCh
 }
 
 func (t *WsTransport) readLoop() {
@@ -66,6 +93,8 @@ func (t *WsTransport) readLoop() {
 	t.conn.SetReadDeadline(time.Now().Add(t.pongWait))
 	defer func() {
 		t.conn.Close()
+		t.pingTicker.Stop()
+		close(t.in)
 	}()
 
 	for {
@@ -73,9 +102,9 @@ func (t *WsTransport) readLoop() {
 		//fmt.Println(">> ", mtype)
 		if err != nil {
 			if websocket.IsCloseError(err, websocket.CloseNoStatusReceived) {
-				t.closed <- nil
+				t.closedCh <- nil
 			} else {
-				t.closed <- err
+				t.closedCh <- err
 			}
 			break
 		}
@@ -83,37 +112,21 @@ func (t *WsTransport) readLoop() {
 		p, err := ParsePacket(raw)
 		if err != nil {
 			fmt.Printf("Parse packet error: %s\n", err)
-			t.conn.Close()
-			t.closed <- err
+			t.closedCh <- err
 			break
 		}
 		t.in <- p
-
 	}
 }
 
-func (t *WsTransport) writeLoop() {
-	rp := time.Duration((rand.Intn(20) + 70))
-	pingPeriod := (t.pongWait * rp) / 100
-	ticker := time.NewTicker(pingPeriod)
-	defer func() {
-		ticker.Stop()
-		t.conn.Close()
-	}()
-	for {
-		select {
-		case p := <-t.out:
-			t.conn.SetWriteDeadline(time.Now().Add(t.writeWait))
-			err := t.conn.WriteMessage(websocket.BinaryMessage, p.Dump())
-			if err != nil {
-				fmt.Printf("write packet error: %s\n", err) //FIXME
-				return
-			}
-		case <-ticker.C:
-			t.conn.SetWriteDeadline(time.Now().Add(t.writeWait))
-			if err := t.conn.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
-				return
-			}
+func (t *WsTransport) pingLoop() {
+	for _ = range t.pingTicker.C {
+		t.wlock.Lock()
+		t.conn.SetWriteDeadline(time.Now().Add(t.writeWait))
+		err := t.conn.WriteMessage(websocket.PingMessage, []byte{})
+		t.wlock.Unlock()
+		if err != nil {
+			t.conn.Close()
 		}
 	}
 }

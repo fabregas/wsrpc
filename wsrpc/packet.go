@@ -1,4 +1,4 @@
-package main
+package wsrpc
 
 import (
 	"fmt"
@@ -49,6 +49,11 @@ func NewPacket(ptype uint8, method string, body []byte) *Packet {
 		},
 		Body: body,
 	}
+}
+
+func (p *Packet) Id() string {
+	mid, _ := uuid.FromBytes(p.Header.MessageId)
+	return mid.String()
 }
 
 func (p *Packet) String() string {

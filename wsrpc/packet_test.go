@@ -1,4 +1,4 @@
-package main
+package wsrpc
 
 import (
 	"testing"

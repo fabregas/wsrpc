@@ -1,4 +1,4 @@
-package main
+package wsrpc
 
 import (
 	"fmt"
@@ -11,18 +11,8 @@ import (
 )
 
 func BenchmarkWsRPCServer(b *testing.B) {
-	wsh := NewWsHandler()
-	srv, err := NewRPCServer(wsh.Connections(), func() SessionProtocol { return &MyProtocol{} })
-	if err != nil {
-		panic(err)
-	}
-	go srv.Run()
-
-	mux := http.NewServeMux()
-	mux.Handle("/test/wsrpc", wsh)
-	s := http.Server{Handler: mux, Addr: ":8080"}
-	go s.ListenAndServe()
-
+	closech := make(chan struct{})
+	go ServeWSRPC(func() SessionProtocol { return &MyProtocol{} }, ":8080", "/test/wsrpc", closech)
 	time.Sleep(1 * time.Second)
 	/////////////
 
@@ -39,7 +29,7 @@ func BenchmarkWsRPCServer(b *testing.B) {
 		<-cli.transport.Recv()
 	}
 	cli.transport.Close()
-	s.Close()
+	close(closech)
 }
 
 func BenchmarkRawWsServer(b *testing.B) {

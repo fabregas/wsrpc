@@ -1,9 +1,10 @@
-package main
+package wsrpc
 
 import (
 	"fmt"
 	"io"
 	"testing"
+	"time"
 )
 
 // --------------------------------------------
@@ -43,6 +44,10 @@ func (p *MyProtocol) MyMethod(req *SomeReq) (*SomeResp, error) {
 	} else {
 		return &SomeResp{false}, nil
 	}
+}
+func (p *MyProtocol) MySleep(req *SomeReq) (*SomeResp, error) {
+	time.Sleep(2 * time.Second)
+	return &SomeResp{false}, nil
 }
 
 // --------------------------------------------
