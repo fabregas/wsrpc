@@ -7,11 +7,6 @@ import (
 	"reflect"
 )
 
-func genId() string {
-	//FIXME
-	return "some-id"
-}
-
 type RPCTransport interface {
 	Recv() <-chan *Packet
 	Send(*Packet) error
@@ -158,6 +153,7 @@ func (rpc *RPCServer) procConn(conn RPCTransport) {
 		if err != nil {
 			// logging error
 			fmt.Printf("cant send: %s\n", err) //FIXME
+			return
 		}
 	}
 }
