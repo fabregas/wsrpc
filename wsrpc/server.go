@@ -8,16 +8,28 @@ import (
 
 // RPCNotifier implements notifications sender from server to client
 type RPCNotifier struct {
-	notifChan chan *Packet
+	protDetails *protocolDetails
+	notifChan   chan *Packet
 }
 
 func (n *RPCNotifier) Notify(notification interface{}) error {
-	buf, err := json.Marshal(notification) //FIXME check Type
+	// check type of notification
+	nt := reflect.TypeOf(notification)
+	if nt.Kind() == reflect.Ptr {
+		nt = nt.Elem()
+	}
+	vt, ok := n.protDetails.notifications[nt.Name()]
+	if !ok || vt != nt {
+		return fmt.Errorf("Notification %s is not declared in protocol", reflect.TypeOf(notification))
+	}
+
+	// marshal notification to []byte
+	buf, err := json.Marshal(notification)
 	if err != nil {
 		return err
 	}
 
-	p := NewPacket(PT_NOTIFICATION, "FIXME", buf)
+	p := NewPacket(PT_NOTIFICATION, nt.Name(), buf)
 	select {
 	case n.notifChan <- p:
 	default:
@@ -33,8 +45,8 @@ func (n *RPCNotifier) Notify(notification interface{}) error {
 type RPCServer struct {
 	conns <-chan RPCTransport
 
-	protocol NewSessionFunc
-	methods  map[string]methodDetails
+	protocol    NewSessionFunc
+	protDetails *protocolDetails
 
 	finishCh chan struct{}
 }
@@ -48,11 +60,11 @@ func NewRPCServer(conns <-chan RPCTransport, f NewSessionFunc) (*RPCServer, erro
 	}
 
 	p := f()
-	methods, err := parseSessionProtocol(p)
-	rpc.methods = methods
+	pdetails, err := parseSessionProtocol(p)
 	if err != nil {
 		return nil, err
 	}
+	rpc.protDetails = pdetails
 	rpc.protocol = f
 	return rpc, nil
 
@@ -71,7 +83,7 @@ func (rpc *RPCServer) Close() {
 func (rpc *RPCServer) procConn(conn RPCTransport) {
 	prot := rpc.protocol()
 	respCh := make(chan *Packet)
-	notifier := &RPCNotifier{respCh}
+	notifier := &RPCNotifier{rpc.protDetails, respCh}
 	prot.OnConnect(conn, notifier)
 
 	for {
@@ -103,7 +115,7 @@ func (rpc *RPCServer) procConn(conn RPCTransport) {
 }
 
 func (rpc *RPCServer) callMethod(p SessionProtocol, packet *Packet, respCh chan<- *Packet) {
-	m, ok := rpc.methods[packet.Header.Method] //FIXME lock
+	m, ok := rpc.protDetails.methods[packet.Header.Method] //FIXME lock (?)
 	if !ok {
 		respCh <- packet.Error(
 			fmt.Errorf("no method %s found", packet.Header.Method),

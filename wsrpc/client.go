@@ -9,33 +9,37 @@ import (
 	"time"
 )
 
+type OnNotificationFunc func(interface{}, error)
+
 type RPCClient struct {
 	conn          RPCTransport
 	flow          *FlowController
 	notifications chan *Packet
 	closedFlag    int32
 
-	methods map[string]methodDetails
+	protDetails *protocolDetails
+	onNotifFunc OnNotificationFunc
 }
 
-func NewRPCClient(conn RPCTransport, p SessionProtocol, timeout time.Duration) (*RPCClient, error) {
+func NewRPCClient(conn RPCTransport, p SessionProtocol, timeout time.Duration, onNotifFunc OnNotificationFunc) (*RPCClient, error) {
 	cli := &RPCClient{
 		conn:          conn,
 		flow:          NewFlowController(timeout),
 		notifications: make(chan *Packet, 100),
+		onNotifFunc:   onNotifFunc,
 	}
-	methods, err := parseSessionProtocol(p)
-	cli.methods = methods
-
+	pdetails, err := parseSessionProtocol(p)
 	if err != nil {
 		return nil, err
 	}
+	cli.protDetails = pdetails
 	go cli.loop()
+	go cli.notifLoop()
 	return cli, nil
 }
 
 func (cli *RPCClient) Call(method string, request interface{}) (interface{}, error) {
-	md, ok := cli.methods[method]
+	md, ok := cli.protDetails.methods[method]
 	if !ok {
 		return nil, fmt.Errorf("unknown method %s", method)
 	}
@@ -81,8 +85,17 @@ func (cli *RPCClient) Closed() bool {
 	return atomic.LoadInt32(&cli.closedFlag) == 1
 }
 
-func (cli *RPCClient) RawNotifications() <-chan *Packet {
-	return cli.notifications
+func (cli *RPCClient) notifLoop() {
+	for packet := range cli.notifications {
+		vt, ok := cli.protDetails.notifications[packet.Header.Method]
+		if !ok {
+			cli.onNotifFunc(nil, fmt.Errorf("unexpected notification %s", packet.Header.Method))
+		}
+		val := reflect.New(vt)
+		err := json.Unmarshal(packet.Body, val.Interface())
+
+		cli.onNotifFunc(val.Interface(), err)
+	}
 }
 
 func (cli *RPCClient) onNotif(packet *Packet) {
@@ -119,6 +132,7 @@ func (cli *RPCClient) loop() {
 			if err != nil {
 				fmt.Println("cli.loop() closed with error: ", err)
 			}
+			close(cli.notifications)
 			atomic.StoreInt32(&cli.closedFlag, 1)
 			return
 		}

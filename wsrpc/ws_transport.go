@@ -159,11 +159,7 @@ func (h *WsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.conns <- NewWsTransport(conn)
 }
 
-type WsClient struct {
-	transport *WsTransport
-}
-
-func NewWsClient(url string) (*WsClient, error) {
+func NewWsConn(url string) (*WsTransport, error) {
 	dialer := &websocket.Dialer{}
 	conn, resp, err := dialer.Dial(url, http.Header{})
 	if err != nil {
@@ -171,5 +167,5 @@ func NewWsClient(url string) (*WsClient, error) {
 		return nil, err
 	}
 
-	return &WsClient{NewWsTransport(conn)}, nil
+	return NewWsTransport(conn), nil
 }

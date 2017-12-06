@@ -16,19 +16,19 @@ func BenchmarkWsRPCServer(b *testing.B) {
 	time.Sleep(1 * time.Second)
 	/////////////
 
-	cli, err := NewWsClient("ws://127.0.0.1:8080/test/wsrpc")
+	cli, err := NewWsConn("ws://127.0.0.1:8080/test/wsrpc")
 	if err != nil {
 		panic(err)
 	}
-	<-cli.transport.Recv()
+	<-cli.Recv()
 	p := NewPacket(PT_REQUEST, "MyMethod", []byte("{\"name\":\"Bob\"}"))
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cli.transport.Send(p)
-		<-cli.transport.Recv()
+		cli.Send(p)
+		<-cli.Recv()
 	}
-	cli.transport.Close()
+	cli.Close()
 	close(closech)
 }
 

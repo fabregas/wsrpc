@@ -11,14 +11,40 @@ type methodDetails struct {
 	outType reflect.Type
 }
 
-func parseSessionProtocol(p SessionProtocol) (map[string]methodDetails, error) {
-	methods := make(map[string]methodDetails)
+type protocolDetails struct {
+	methods       map[string]methodDetails
+	notifications map[string]reflect.Type
+}
 
+func (pd *protocolDetails) checkNotifType(n interface{}) bool {
+	nt := reflect.TypeOf(n)
+	if nt.Kind() == reflect.Ptr {
+		nt = nt.Elem()
+	}
+
+	vt, ok := pd.notifications[nt.Name()]
+	if !ok {
+		return false
+	}
+	return vt == nt
+}
+
+func parseSessionProtocol(p SessionProtocol) (*protocolDetails, error) {
 	errorInterface := reflect.TypeOf((*error)(nil)).Elem()
 	pType := reflect.TypeOf(p)
 	if pType.Kind() != reflect.Ptr {
 		return nil, fmt.Errorf("pointer to protocol instance expected")
 	}
+
+	ret := &protocolDetails{
+		methods: make(map[string]methodDetails),
+	}
+	ndescr, err := parseNotifications(pType.Elem())
+	if err != nil {
+		return nil, err
+	}
+	ret.notifications = ndescr
+
 	for i := 0; i < pType.NumMethod(); i++ {
 		m := pType.Method(i)
 		switch m.Name {
@@ -59,7 +85,32 @@ func parseSessionProtocol(p SessionProtocol) (map[string]methodDetails, error) {
 			return nil, fmt.Errorf("method must return error type in method %s", m.Name)
 		}
 
-		methods[m.Name] = methodDetails{m.Func, inT, outT}
+		ret.methods[m.Name] = methodDetails{m.Func, inT, outT}
 	}
-	return methods, nil
+	return ret, nil
+}
+
+func parseNotifications(pt reflect.Type) (map[string]reflect.Type, error) {
+	field, ok := pt.FieldByName("Notifications")
+	if !ok {
+		return nil, fmt.Errorf("no Notifications declaration found in session protocol")
+	}
+
+	ns := field.Type
+	if ns.Kind() != reflect.Struct {
+		return nil, fmt.Errorf("Notifications must be declared as a struct")
+	}
+
+	ret := make(map[string]reflect.Type)
+	for i := 0; i < ns.NumField(); i++ {
+		f := ns.Field(i)
+		if f.Type.Kind() != reflect.Ptr {
+			return nil, fmt.Errorf("notification %s must be a pointer", f.Name)
+		}
+		n := f.Type.Elem()
+		ret[n.Name()] = n
+	}
+
+	return ret, nil
+
 }

@@ -23,12 +23,18 @@ type MyNotif struct {
 }
 
 type MyProtocol struct {
-	closed chan bool
+	closed   chan bool
+	notifier *RPCNotifier
+
+	Notifications struct {
+		*MyNotif
+	}
 }
 
 func (p *MyProtocol) OnConnect(closer io.Closer, notifier *RPCNotifier) {
 	//fmt.Println("ON CONNECT =>", closer, notifier)
 	notifier.Notify(&MyNotif{"hello, dude!"})
+	p.notifier = notifier
 }
 func (p *MyProtocol) OnDisconnect(err error) {
 	//fmt.Println("ON DISCONNECT => ", err)
@@ -48,6 +54,11 @@ func (p *MyProtocol) MyMethod(req *SomeReq) (*SomeResp, error) {
 func (p *MyProtocol) MySleep(req *SomeReq) (*SomeResp, error) {
 	time.Sleep(2 * time.Second)
 	return &SomeResp{false}, nil
+}
+
+func (p *MyProtocol) EmitInvalidNotification(req *SomeReq) (*SomeResp, error) {
+	err := p.notifier.Notify(&SomeResp{})
+	return nil, err
 }
 
 // --------------------------------------------
@@ -94,7 +105,7 @@ func TestAbstractRPC(t *testing.T) {
 	conns := make(chan RPCTransport)
 	closeCh := make(chan bool)
 
-	srv, err := NewRPCServer(conns, func() SessionProtocol { return &MyProtocol{closeCh} })
+	srv, err := NewRPCServer(conns, func() SessionProtocol { return &MyProtocol{closed: closeCh} })
 	if err != nil {
 		t.Error(err)
 		return
@@ -173,6 +184,19 @@ func TestAbstractRPC(t *testing.T) {
 		return
 	}
 
+	// emit invalid notification from server
+	req = NewPacket(PT_REQUEST, "EmitInvalidNotification", []byte("{\"name\":\"Bob\"}"))
+	conn.in <- req
+	p = <-conn.out
+	if p.Header.Type != PT_ERROR {
+		t.Error("invalid err type")
+		return
+	}
+	if string(p.Body) != "Notification *wsrpc.SomeResp is not declared in protocol" {
+		t.Error(string(p.Body))
+		return
+	}
+
 	conn.Close()
 	<-closeCh
 }
@@ -180,7 +204,7 @@ func TestAbstractRPC(t *testing.T) {
 func BenchmarkAbstractRPCServer(b *testing.B) {
 	conns := make(chan RPCTransport)
 
-	srv, err := NewRPCServer(conns, func() SessionProtocol { return &MyProtocol{nil} })
+	srv, err := NewRPCServer(conns, func() SessionProtocol { return &MyProtocol{closed: nil} })
 	if err != nil {
 		b.Error(err)
 		return

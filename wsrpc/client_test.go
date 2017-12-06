@@ -8,16 +8,31 @@ import (
 
 func TestRPCBothSide(t *testing.T) {
 	closech := make(chan struct{})
+	notifch := make(chan *MyNotif)
 	go ServeWSRPC(func() SessionProtocol { return &MyProtocol{} }, ":8080", "/test/wsrpc", closech)
 	time.Sleep(100 * time.Millisecond)
 
-	tr, err := NewWsClient("ws://127.0.0.1:8080/test/wsrpc")
+	tr, err := NewWsConn("ws://127.0.0.1:8080/test/wsrpc")
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	cli, err := NewRPCClient(tr.transport, &MyProtocol{}, 1*time.Second)
+	onNotifFunc := func(n interface{}, err error) {
+		if err != nil {
+			t.Error(err)
+			return
+		}
+
+		switch notif := n.(type) {
+		case *MyNotif:
+			notifch <- notif
+		default:
+			t.Error("unexpected notification type")
+		}
+	}
+
+	cli, err := NewRPCClient(tr, &MyProtocol{}, 1*time.Second, onNotifFunc)
 	if err != nil {
 		t.Error(err)
 		return
@@ -69,17 +84,12 @@ func TestRPCBothSide(t *testing.T) {
 		return
 	}
 
-	// check raw notification
-	notif := <-cli.RawNotifications()
-	if notif.Header.Type != PT_NOTIFICATION {
-		t.Error("invalid notification packet type")
+	// check notification
+	notif := <-notifch
+	if notif.Msg != "hello, dude!" {
+		t.Error(notif.Msg)
 		return
 	}
-	if string(notif.Body) != "{\"Msg\":\"hello, dude!\"}" {
-		t.Error(string(notif.Body))
-		return
-	}
-
 	// check timeout using sleep method
 	_, err = cli.Call("MySleep", &r)
 	if err != TimeoutError {
