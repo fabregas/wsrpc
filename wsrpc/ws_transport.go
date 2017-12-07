@@ -112,7 +112,6 @@ func (t *WsTransport) Close() error {
 func (t *WsTransport) pingLoop() {
 	for _ = range t.pingTicker.C {
 		t.wlock.Lock()
-		fmt.Println(">> ping ...")
 		t.conn.SetWriteDeadline(time.Now().Add(t.writeWait))
 		err := t.conn.WriteMessage(websocket.PingMessage, []byte{})
 		t.wlock.Unlock()
