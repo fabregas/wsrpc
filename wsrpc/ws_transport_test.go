@@ -10,9 +10,13 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+func dummyOnNotifFunc(n interface{}, err error) {
+}
+
 func BenchmarkWsRPCServer(b *testing.B) {
 	closech := make(chan struct{})
-	go ServeWSRPC(func() SessionProtocol { return &MyProtocol{} }, ":8080", "/test/wsrpc", &DummyLogger{}, closech)
+	log := &DummyLogger{LL_ERROR}
+	go ServeWSRPC(func() SessionProtocol { return &MyProtocol{} }, ":8080", "/test/wsrpc", log, closech)
 	time.Sleep(1 * time.Second)
 	/////////////
 
@@ -28,6 +32,7 @@ func BenchmarkWsRPCServer(b *testing.B) {
 		cli.Send(p)
 		<-cli.Recv()
 	}
+	b.StopTimer()
 	cli.Close()
 	close(closech)
 }
@@ -86,6 +91,7 @@ func BenchmarkRawWsServer(b *testing.B) {
 			return
 		}
 	}
+	b.StopTimer()
 	s.Close()
 }
 
@@ -120,6 +126,7 @@ func BenchmarkRawTcpServer(b *testing.B) {
 		conn.Write(msg)
 		conn.Read(buf)
 	}
+	b.StopTimer()
 
 	conn.Close()
 	l.Close()

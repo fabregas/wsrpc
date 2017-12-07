@@ -31,25 +31,27 @@ type WsTransport struct {
 	log Logger
 }
 
-func NewWsTransport(c *websocket.Conn, log Logger) *WsTransport {
+func NewWsTransport(c *websocket.Conn, needPing bool, log Logger) *WsTransport {
 	pongWait := 60 * time.Second  //FIXME
 	writeWait := 10 * time.Second //FIXME
 
-	rp := time.Duration((rand.Intn(20) + 70))
-	pingPeriod := (pongWait * rp) / 100
-	ticker := time.NewTicker(pingPeriod)
-
 	t := &WsTransport{
-		in:         make(chan *Packet),
-		closedCh:   make(chan error),
-		conn:       c,
-		pingTicker: ticker,
-		pongWait:   pongWait,
-		writeWait:  writeWait,
-		log:        log,
+		in:        make(chan *Packet),
+		closedCh:  make(chan error),
+		conn:      c,
+		pongWait:  pongWait,
+		writeWait: writeWait,
+		log:       log,
 	}
 	go t.readLoop()
-	go t.pingLoop()
+	if needPing {
+		rp := time.Duration((rand.Intn(20) + 70))
+		pingPeriod := (pongWait * rp) / 100
+		ticker := time.NewTicker(pingPeriod)
+		t.pingTicker = ticker
+
+		go t.pingLoop()
+	}
 	return t
 }
 
@@ -67,7 +69,6 @@ func (t *WsTransport) Send(p *Packet) error {
 
 	if err != nil {
 		if err == websocket.ErrCloseSent {
-			fmt.Println(">>>>CLOSE")
 			t.conn.Close()
 			return ClosedConnError
 		}
@@ -89,15 +90,19 @@ func (t *WsTransport) Closed() <-chan error {
 }
 
 func (t *WsTransport) readLoop() {
-	pongHandler := func(string) error {
+	if t.pingTicker != nil {
+		pongHandler := func(string) error {
+			t.conn.SetReadDeadline(time.Now().Add(t.pongWait))
+			return nil
+		}
+		t.conn.SetPongHandler(pongHandler)
 		t.conn.SetReadDeadline(time.Now().Add(t.pongWait))
-		return nil
 	}
-	t.conn.SetPongHandler(pongHandler)
-	t.conn.SetReadDeadline(time.Now().Add(t.pongWait))
 	defer func() {
 		t.conn.Close()
-		t.pingTicker.Stop()
+		if t.pingTicker != nil {
+			t.pingTicker.Stop()
+		}
 		close(t.in)
 	}()
 
@@ -159,20 +164,21 @@ func (h *WsHandler) Connections() <-chan RPCTransport {
 func (h *WsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
+		h.log.Errorf("websocket upgrade fails: %s", err.Error())
 		w.WriteHeader(http.StatusBadRequest)
 		fmt.Fprintf(w, "websocket upgrade fails: %s", err.Error())
 		return
 	}
-	h.conns <- NewWsTransport(conn, h.log)
+	h.conns <- NewWsTransport(conn, true, h.log)
 }
 
 func NewWsConn(url string, log Logger) (*WsTransport, error) {
-	dialer := &websocket.Dialer{}
+	dialer := &websocket.Dialer{HandshakeTimeout: 60 * time.Second}
 	conn, resp, err := dialer.Dial(url, http.Header{})
 	if err != nil {
 		log.Debugf("response: %s", resp)
 		return nil, err
 	}
 
-	return NewWsTransport(conn, log), nil
+	return NewWsTransport(conn, false, log), nil
 }

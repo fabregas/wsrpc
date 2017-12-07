@@ -3,5 +3,5 @@ test:
 	go test -v ./wsrpc
 
 bench:
-	go test -v -benchmem -bench . ./wsrpc
+	go test -v -cpu 1 -benchmem -bench . ./wsrpc
 

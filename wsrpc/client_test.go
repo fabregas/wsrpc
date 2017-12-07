@@ -121,3 +121,59 @@ func TestRPCBothSide(t *testing.T) {
 		return
 	}
 }
+
+func BenchmarkManyConns100(b *testing.B) {
+	helperForManyConnsBench(100, b)
+}
+
+func BenchmarkManyConns1000(b *testing.B) {
+	helperForManyConnsBench(1000, b)
+}
+
+//func BenchmarkManyConns10000(b *testing.B) {
+//	helperForManyConnsBench(10000, b)
+//}
+
+func helperForManyConnsBench(numConns int, b *testing.B) {
+	closech := make(chan struct{})
+	log := &DummyLogger{LL_INFO}
+	go ServeWSRPC(func() SessionProtocol { return &MyProtocol{} }, "127.0.0.1:7878", "/bench/wsrpc", log, closech)
+	time.Sleep(100 * time.Millisecond)
+	/////////////
+
+	cliFunc := func(n int) *RPCClient {
+		cli, err := ClientWSRPC(&MyProtocol{}, "ws://127.0.0.1:7878/bench/wsrpc", 1*time.Second, dummyOnNotifFunc, log)
+		if err != nil {
+			b.Fatalf("cli#%d failed: %s", n, err.Error())
+		}
+		return cli
+	}
+
+	clients := make([]*RPCClient, 0, numConns)
+	for i := 0; i < numConns; i++ {
+		clients = append(clients, cliFunc(i))
+	}
+	time.Sleep(100 * time.Millisecond)
+
+	cli, err := NewWsConn("ws://127.0.0.1:7878/bench/wsrpc", &DummyLogger{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	<-cli.Recv()
+	p := NewPacket(PT_REQUEST, "MyMethod", []byte("{\"name\":\"Bob\"}"))
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		cli.Send(p)
+		<-cli.Recv()
+	}
+	b.StopTimer()
+
+	cli.Close()
+
+	for _, client := range clients {
+		client.Close()
+	}
+	close(closech)
+	time.Sleep(100 * time.Millisecond)
+}
