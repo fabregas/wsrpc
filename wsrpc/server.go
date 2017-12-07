@@ -90,11 +90,22 @@ func (rpc *RPCServer) procConn(conn RPCTransport) {
 	notifier := &RPCNotifier{rpc.protDetails, respCh}
 	prot.OnConnect(conn, notifier)
 
+	readFunc := func() {
+		for {
+			packet, err := conn.Recv()
+			if err != nil {
+				rpc.log.Debugf("returning rpc.readFunc() with err: %s", err.Error())
+				prot.OnDisconnect(err)
+				return
+			}
+
+			go rpc.callMethod(prot, packet, respCh) //TODO maybe worker pool should be implemented
+		}
+	}
+	go readFunc()
+
 	for {
 		select {
-		case packet := <-conn.Recv():
-			go rpc.callMethod(prot, packet, respCh) //TODO maybe worker pool should be implemented
-
 		case retPacket := <-respCh:
 			err := conn.Send(retPacket)
 			if err != nil {
@@ -103,16 +114,8 @@ func (rpc *RPCServer) procConn(conn RPCTransport) {
 				return
 			}
 
-		case err := <-conn.Closed():
-			if err != nil {
-				rpc.log.Debugf("returning rpc.procConn() with err: %s", err.Error())
-			}
-			prot.OnDisconnect(err)
-			return
-
 		case <-rpc.finishCh:
 			conn.Close()
-			prot.OnDisconnect(fmt.Errorf("server shutdown"))
 			return
 		}
 	}
@@ -144,7 +147,6 @@ func (rpc *RPCServer) callMethod(p SessionProtocol, packet *Packet, respCh chan<
 
 	buf, err = json.Marshal(ret[0].Interface())
 	if err != nil {
-		// FIXME logging
 		respCh <- packet.Error(err)
 		return
 	}

@@ -19,9 +19,7 @@ func init() {
 }
 
 type WsTransport struct {
-	in       chan *Packet
-	closedCh chan error
-	wlock    sync.Mutex
+	wlock sync.Mutex
 
 	conn       *websocket.Conn
 	pingTicker *time.Ticker
@@ -36,27 +34,50 @@ func NewWsTransport(c *websocket.Conn, needPing bool, log Logger) *WsTransport {
 	writeWait := 10 * time.Second //FIXME
 
 	t := &WsTransport{
-		in:        make(chan *Packet),
-		closedCh:  make(chan error),
 		conn:      c,
 		pongWait:  pongWait,
 		writeWait: writeWait,
 		log:       log,
 	}
-	go t.readLoop()
+
 	if needPing {
 		rp := time.Duration((rand.Intn(20) + 70))
 		pingPeriod := (pongWait * rp) / 100
 		ticker := time.NewTicker(pingPeriod)
 		t.pingTicker = ticker
 
+		// setup pong handler and read timeout
+		pongHandler := func(string) error {
+			t.conn.SetReadDeadline(time.Now().Add(t.pongWait))
+			return nil
+		}
+		t.conn.SetPongHandler(pongHandler)
+		t.conn.SetReadDeadline(time.Now().Add(t.pongWait))
+
 		go t.pingLoop()
 	}
+
 	return t
 }
 
-func (t *WsTransport) Recv() <-chan *Packet {
-	return t.in
+func (t *WsTransport) Recv() (*Packet, error) {
+	_, raw, err := t.conn.ReadMessage()
+	if err != nil {
+		t.Close()
+		return nil, err
+		//if websocket.IsCloseError(err, websocket.CloseNoStatusReceived) {
+		//	t.closedCh <- nil
+		//	} else {
+		//		t.closedCh <- err
+		//	}
+	}
+
+	p, err := ParsePacket(raw)
+	if err != nil {
+		t.Close()
+		return nil, fmt.Errorf("parse packet error: %s", err)
+	}
+	return p, err
 }
 
 func (t *WsTransport) Send(p *Packet) error {
@@ -82,55 +103,16 @@ func (t *WsTransport) Close() error {
 	t.conn.WriteMessage(websocket.CloseMessage, []byte{})
 	t.wlock.Unlock()
 
-	return t.conn.Close()
-}
-
-func (t *WsTransport) Closed() <-chan error {
-	return t.closedCh
-}
-
-func (t *WsTransport) readLoop() {
 	if t.pingTicker != nil {
-		pongHandler := func(string) error {
-			t.conn.SetReadDeadline(time.Now().Add(t.pongWait))
-			return nil
-		}
-		t.conn.SetPongHandler(pongHandler)
-		t.conn.SetReadDeadline(time.Now().Add(t.pongWait))
+		t.pingTicker.Stop()
 	}
-	defer func() {
-		t.conn.Close()
-		if t.pingTicker != nil {
-			t.pingTicker.Stop()
-		}
-		close(t.in)
-	}()
-
-	for {
-		_, raw, err := t.conn.ReadMessage()
-		//fmt.Println(">> ", mtype)
-		if err != nil {
-			if websocket.IsCloseError(err, websocket.CloseNoStatusReceived) {
-				t.closedCh <- nil
-			} else {
-				t.closedCh <- err
-			}
-			break
-		}
-
-		p, err := ParsePacket(raw)
-		if err != nil {
-			t.log.Errorf("parse packet error: %s", err)
-			t.closedCh <- err
-			break
-		}
-		t.in <- p
-	}
+	return t.conn.Close()
 }
 
 func (t *WsTransport) pingLoop() {
 	for _ = range t.pingTicker.C {
 		t.wlock.Lock()
+		fmt.Println(">> ping ...")
 		t.conn.SetWriteDeadline(time.Now().Add(t.writeWait))
 		err := t.conn.WriteMessage(websocket.PingMessage, []byte{})
 		t.wlock.Unlock()
