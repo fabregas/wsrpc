@@ -57,4 +57,4 @@ func (p *SumProtocol) Sum(req *SumReq) (*SumResp, error) {
 }
 ```
 
-Full client/server example see in [examples/simple](https://github.com/fabregas/wsrpc/examples/simple) directory.
+Full client/server example see in [examples/simple](https://github.com/fabregas/wsrpc/tree/master/examples/simple) directory.
