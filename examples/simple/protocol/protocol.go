@@ -1,18 +1,12 @@
-# wsrpc
+package protocol
 
-`wsrpc` is a Go package which allows you to construct session based RPC over websocket connection (client and server sides).
+import (
+	"../../../wsrpc"
 
-## Usage
+	"fmt"
+	"io"
+)
 
-In order to start, go get this repository:
-
-```golang
-go get github.com/fabregas/wsrpc
-```
-
-### Session protocol declaration example
-
-```go
 type SumReq struct {
 	A int
 	B int
@@ -55,6 +49,3 @@ func (p *SumProtocol) Sum(req *SumReq) (*SumResp, error) {
 	}
 	return &SumResp{req.A + req.B}, nil
 }
-```
-
-Full client/server example see in [examples/simple](https://github.com/fabregas/wsrpc/examples/simple) directory.

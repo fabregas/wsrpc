@@ -2,6 +2,7 @@ package wsrpc
 
 import (
 	"net/http"
+	"time"
 )
 
 func ServeWSRPC(sfunc NewSessionFunc, addr string, path string, log Logger, closeCh chan struct{}) {
@@ -21,4 +22,13 @@ func ServeWSRPC(sfunc NewSessionFunc, addr string, path string, log Logger, clos
 
 	s.Close()
 	srv.Close()
+}
+
+func ClientWSRPC(p SessionProtocol, url string, timeout time.Duration, onNotifFunc OnNotificationFunc, log Logger) (*RPCClient, error) {
+	tr, err := NewWsConn(url, log)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewRPCClient(tr, p, timeout, onNotifFunc, log)
 }

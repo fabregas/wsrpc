@@ -93,6 +93,9 @@ func (cli *RPCClient) Call(method string, request interface{}) (interface{}, err
 func (cli *RPCClient) Closed() bool {
 	return atomic.LoadInt32(&cli.closedFlag) == 1
 }
+func (cli *RPCClient) Close() error {
+	return cli.conn.Close()
+}
 
 func (cli *RPCClient) notifLoop() {
 	for packet := range cli.notifications {
@@ -141,7 +144,7 @@ func (cli *RPCClient) loop() {
 
 		case err := <-cli.conn.Closed():
 			if err != nil {
-				cli.log.Infof("[cli.loop] closed with error: %s", err.Error())
+				cli.log.Debugf("[cli.loop] closed with error: %s", err.Error())
 			}
 			close(cli.notifications)
 			atomic.StoreInt32(&cli.closedFlag, 1)

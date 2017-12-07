@@ -67,6 +67,7 @@ func (t *WsTransport) Send(p *Packet) error {
 
 	if err != nil {
 		if err == websocket.ErrCloseSent {
+			fmt.Println(">>>>CLOSE")
 			t.conn.Close()
 			return ClosedConnError
 		}
