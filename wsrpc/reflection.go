@@ -16,21 +16,11 @@ type protocolDetails struct {
 	notifications map[string]reflect.Type
 }
 
-func (pd *protocolDetails) checkNotifType(n interface{}) bool {
-	nt := reflect.TypeOf(n)
-	if nt.Kind() == reflect.Ptr {
-		nt = nt.Elem()
-	}
-
-	vt, ok := pd.notifications[nt.Name()]
-	if !ok {
-		return false
-	}
-	return vt == nt
-}
-
 func parseSessionProtocol(p SessionProtocol) (*protocolDetails, error) {
 	errorInterface := reflect.TypeOf((*error)(nil)).Elem()
+	if p == nil {
+		return nil, fmt.Errorf("pointer to protocol instance expected")
+	}
 	pType := reflect.TypeOf(p)
 	if pType.Kind() != reflect.Ptr {
 		return nil, fmt.Errorf("pointer to protocol instance expected")
