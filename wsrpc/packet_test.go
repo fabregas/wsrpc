@@ -62,6 +62,16 @@ func TestPacket(t *testing.T) {
 	NewPacket(PT_ERROR, "-", []byte("-")).String()
 	NewPacket(88, "-", []byte("-")).String()
 
+	//parse packet fails scenarios
+	_, err = ParsePacket([]byte("--"))
+	if err.Error() != "invalid packet size" {
+		t.Error(err)
+	}
+	_, err = ParsePacket([]byte("-------------------------------------"))
+	if err.Error() != "invalid packet" {
+		t.Error(err)
+	}
+
 }
 
 func BenchmarkPacketDumpParse(b *testing.B) {
