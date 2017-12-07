@@ -122,33 +122,33 @@ func (cli *RPCClient) onNotif(packet *Packet) {
 func (cli *RPCClient) loop() {
 	cli.log.Debug("rpc client read loop started")
 	for {
-		select {
-		case packet := <-cli.conn.Recv():
-			switch packet.Header.Type {
-			case PT_ERROR:
-				rw := cli.flow.GetWaiter(packet.Id())
-				if rw != nil {
-					rw.setError(errors.New(string(packet.Body)))
-				}
-			case PT_RESPONSE:
-				rw := cli.flow.GetWaiter(packet.Id())
-				if rw != nil {
-					rw.setData(packet)
-				}
-			case PT_NOTIFICATION:
-				cli.onNotif(packet)
+		packet, err := cli.conn.Recv()
 
-			default:
-				cli.log.Errorf("[cli.loop] unexpected packet type <%s>", packet.Header.Type)
-			}
-
-		case err := <-cli.conn.Closed():
-			if err != nil {
-				cli.log.Debugf("[cli.loop] closed with error: %s", err.Error())
-			}
+		if err != nil {
+			cli.log.Debugf("[cli.loop] closed with error: %s", err.Error())
 			close(cli.notifications)
 			atomic.StoreInt32(&cli.closedFlag, 1)
 			return
+		}
+
+		switch packet.Header.Type {
+		case PT_ERROR:
+			rw := cli.flow.GetWaiter(packet.Id())
+			if rw != nil {
+				rw.setError(errors.New(string(packet.Body)))
+			}
+
+		case PT_RESPONSE:
+			rw := cli.flow.GetWaiter(packet.Id())
+			if rw != nil {
+				rw.setData(packet)
+			}
+
+		case PT_NOTIFICATION:
+			cli.onNotif(packet)
+
+		default:
+			cli.log.Errorf("[cli.loop] unexpected packet type <%s>", packet.Header.Type)
 		}
 	}
 

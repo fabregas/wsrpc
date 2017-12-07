@@ -4,10 +4,9 @@ import "io"
 
 // RPCTransport represents abstract transport for recv/send packages
 type RPCTransport interface {
-	Recv() <-chan *Packet
+	Recv() (*Packet, error)
 	Send(*Packet) error
 	Close() error
-	Closed() <-chan error
 }
 
 // SessionProtocol represent abstract RPC protocol

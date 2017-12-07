@@ -64,13 +64,16 @@ func (p *MyProtocol) EmitInvalidNotification(req *SomeReq) (*SomeResp, error) {
 // fake transport implementation
 
 type FakeConn struct {
-	in     chan *Packet
-	out    chan *Packet
-	closed chan error
+	in  chan *Packet
+	out chan *Packet
 }
 
-func (c *FakeConn) Recv() <-chan *Packet {
-	return c.in
+func (c *FakeConn) Recv() (*Packet, error) {
+	p := <-c.in
+	if p == nil {
+		return nil, fmt.Errorf("simulated close")
+	}
+	return p, nil
 }
 func (c *FakeConn) Send(p *Packet) error {
 	p, _ = ParsePacket(p.Dump()) //simulate dump/parse in real scenario
@@ -79,11 +82,8 @@ func (c *FakeConn) Send(p *Packet) error {
 }
 
 func (c *FakeConn) Close() error {
-	c.closed <- nil
+	c.in <- nil
 	return nil
-}
-func (c *FakeConn) Closed() <-chan error {
-	return c.closed
 }
 func (c *FakeConn) simulateReq() *Packet {
 	p := NewPacket(PT_REQUEST, "MyMethod", []byte("{\"name\":\"Bob\"}"))
@@ -96,7 +96,6 @@ func NewFakeConn() *FakeConn {
 	return &FakeConn{
 		make(chan *Packet),
 		make(chan *Packet, 1),
-		make(chan error),
 	}
 }
 

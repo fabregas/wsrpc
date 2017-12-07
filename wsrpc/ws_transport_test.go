@@ -24,13 +24,13 @@ func BenchmarkWsRPCServer(b *testing.B) {
 	if err != nil {
 		panic(err)
 	}
-	<-cli.Recv()
+	cli.Recv() //recv notification
 	p := NewPacket(PT_REQUEST, "MyMethod", []byte("{\"name\":\"Bob\"}"))
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		cli.Send(p)
-		<-cli.Recv()
+		cli.Recv()
 	}
 	b.StopTimer()
 	cli.Close()
