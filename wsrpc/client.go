@@ -102,6 +102,7 @@ func (cli *RPCClient) notifLoop() {
 		vt, ok := cli.protDetails.notifications[packet.Header.Method]
 		if !ok {
 			cli.onNotifFunc(nil, fmt.Errorf("unexpected notification %s", packet.Header.Method))
+			return
 		}
 		val := reflect.New(vt)
 		err := json.Unmarshal(packet.Body, val.Interface())
