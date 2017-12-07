@@ -1,6 +1,7 @@
 package wsrpc
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -47,6 +48,20 @@ func TestPacket(t *testing.T) {
 		t.Error("invalid parsed body")
 		return
 	}
+
+	pRepr := p.String()
+	if !strings.Contains(pRepr, "<id=") {
+		t.Error(pRepr)
+	}
+	if !strings.Contains(pRepr, "type=REQ, method=MyTestMethod>[some body ;)]") {
+		t.Error(pRepr)
+	}
+	//just for coverage
+	NewPacket(PT_RESPONSE, "-", []byte("-")).String()
+	NewPacket(PT_NOTIFICATION, "-", []byte("-")).String()
+	NewPacket(PT_ERROR, "-", []byte("-")).String()
+	NewPacket(88, "-", []byte("-")).String()
+
 }
 
 func BenchmarkPacketDumpParse(b *testing.B) {
