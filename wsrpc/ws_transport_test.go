@@ -12,11 +12,11 @@ import (
 
 func BenchmarkWsRPCServer(b *testing.B) {
 	closech := make(chan struct{})
-	go ServeWSRPC(func() SessionProtocol { return &MyProtocol{} }, ":8080", "/test/wsrpc", closech)
+	go ServeWSRPC(func() SessionProtocol { return &MyProtocol{} }, ":8080", "/test/wsrpc", &DummyLogger{}, closech)
 	time.Sleep(1 * time.Second)
 	/////////////
 
-	cli, err := NewWsConn("ws://127.0.0.1:8080/test/wsrpc")
+	cli, err := NewWsConn("ws://127.0.0.1:8080/test/wsrpc", &DummyLogger{})
 	if err != nil {
 		panic(err)
 	}

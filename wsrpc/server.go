@@ -49,14 +49,17 @@ type RPCServer struct {
 	protDetails *protocolDetails
 
 	finishCh chan struct{}
+
+	log Logger
 }
 
 type NewSessionFunc func() SessionProtocol
 
-func NewRPCServer(conns <-chan RPCTransport, f NewSessionFunc) (*RPCServer, error) {
+func NewRPCServer(conns <-chan RPCTransport, f NewSessionFunc, log Logger) (*RPCServer, error) {
 	rpc := &RPCServer{
 		conns:    conns,
 		finishCh: make(chan struct{}),
+		log:      log,
 	}
 
 	p := f()
@@ -81,6 +84,7 @@ func (rpc *RPCServer) Close() {
 }
 
 func (rpc *RPCServer) procConn(conn RPCTransport) {
+	rpc.log.Debugf("new connection established")
 	prot := rpc.protocol()
 	respCh := make(chan *Packet)
 	notifier := &RPCNotifier{rpc.protDetails, respCh}
@@ -95,13 +99,13 @@ func (rpc *RPCServer) procConn(conn RPCTransport) {
 			err := conn.Send(retPacket)
 			if err != nil {
 				// logging error
-				fmt.Printf("cant send: %s\n", err) //FIXME
+				rpc.log.Errorf("can't send packet to client: %s", err.Error())
 				return
 			}
 
 		case err := <-conn.Closed():
 			if err != nil {
-				fmt.Printf("DEBUG: returning procConn() with err: %v\n", err) // FIXME
+				rpc.log.Debugf("returning rpc.procConn() with err: %s", err.Error())
 			}
 			prot.OnDisconnect(err)
 			return

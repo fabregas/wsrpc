@@ -9,10 +9,10 @@ import (
 func TestRPCBothSide(t *testing.T) {
 	closech := make(chan struct{})
 	notifch := make(chan *MyNotif)
-	go ServeWSRPC(func() SessionProtocol { return &MyProtocol{} }, ":8080", "/test/wsrpc", closech)
+	go ServeWSRPC(func() SessionProtocol { return &MyProtocol{} }, ":8080", "/test/wsrpc", &DummyLogger{LL_INFO}, closech)
 	time.Sleep(100 * time.Millisecond)
 
-	tr, err := NewWsConn("ws://127.0.0.1:8080/test/wsrpc")
+	tr, err := NewWsConn("ws://127.0.0.1:8080/test/wsrpc", &DummyLogger{})
 	if err != nil {
 		t.Error(err)
 		return
@@ -32,7 +32,7 @@ func TestRPCBothSide(t *testing.T) {
 		}
 	}
 
-	cli, err := NewRPCClient(tr, &MyProtocol{}, 1*time.Second, onNotifFunc)
+	cli, err := NewRPCClient(tr, &MyProtocol{}, 1*time.Second, onNotifFunc, &DummyLogger{})
 	if err != nil {
 		t.Error(err)
 		return

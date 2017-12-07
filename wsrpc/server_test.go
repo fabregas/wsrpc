@@ -2,110 +2,14 @@ package wsrpc
 
 import (
 	"fmt"
-	"io"
 	"testing"
-	"time"
 )
-
-// --------------------------------------------
-// simple protocol implementation
-
-type SomeReq struct {
-	Name string
-}
-
-type SomeResp struct {
-	IsBob bool
-}
-
-type MyNotif struct {
-	Msg string
-}
-
-type MyProtocol struct {
-	closed   chan bool
-	notifier *RPCNotifier
-
-	Notifications struct {
-		*MyNotif
-	}
-}
-
-func (p *MyProtocol) OnConnect(closer io.Closer, notifier *RPCNotifier) {
-	//fmt.Println("ON CONNECT =>", closer, notifier)
-	notifier.Notify(&MyNotif{"hello, dude!"})
-	p.notifier = notifier
-}
-func (p *MyProtocol) OnDisconnect(err error) {
-	//fmt.Println("ON DISCONNECT => ", err)
-	p.closed <- true
-}
-func (p *MyProtocol) MyMethod(req *SomeReq) (*SomeResp, error) {
-	if req.Name == "" {
-		return nil, fmt.Errorf("empty name!")
-	}
-
-	if req.Name == "Bob" {
-		return &SomeResp{true}, nil
-	} else {
-		return &SomeResp{false}, nil
-	}
-}
-func (p *MyProtocol) MySleep(req *SomeReq) (*SomeResp, error) {
-	time.Sleep(2 * time.Second)
-	return &SomeResp{false}, nil
-}
-
-func (p *MyProtocol) EmitInvalidNotification(req *SomeReq) (*SomeResp, error) {
-	err := p.notifier.Notify(&SomeResp{})
-	return nil, err
-}
-
-// --------------------------------------------
-// fake transport implementation
-
-type FakeConn struct {
-	in     chan *Packet
-	out    chan *Packet
-	closed chan error
-}
-
-func (c *FakeConn) Recv() <-chan *Packet {
-	return c.in
-}
-func (c *FakeConn) Send(p *Packet) error {
-	p, _ = ParsePacket(p.Dump()) //simulate dump/parse in real scenario
-	c.out <- p
-	return nil
-}
-
-func (c *FakeConn) Close() error {
-	c.closed <- nil
-	return nil
-}
-func (c *FakeConn) Closed() <-chan error {
-	return c.closed
-}
-func (c *FakeConn) simulateReq() *Packet {
-	p := NewPacket(PT_REQUEST, "MyMethod", []byte("{\"name\":\"Bob\"}"))
-	p, _ = ParsePacket(p.Dump()) //simulate dump/parse in real scenario
-	c.in <- p
-	return p
-}
-
-func NewFakeConn() *FakeConn {
-	return &FakeConn{
-		make(chan *Packet),
-		make(chan *Packet, 1),
-		make(chan error),
-	}
-}
 
 func TestAbstractRPC(t *testing.T) {
 	conns := make(chan RPCTransport)
 	closeCh := make(chan bool)
 
-	srv, err := NewRPCServer(conns, func() SessionProtocol { return &MyProtocol{closed: closeCh} })
+	srv, err := NewRPCServer(conns, func() SessionProtocol { return &MyProtocol{closed: closeCh} }, &DummyLogger{LL_INFO})
 	if err != nil {
 		t.Error(err)
 		return
@@ -204,7 +108,7 @@ func TestAbstractRPC(t *testing.T) {
 func BenchmarkAbstractRPCServer(b *testing.B) {
 	conns := make(chan RPCTransport)
 
-	srv, err := NewRPCServer(conns, func() SessionProtocol { return &MyProtocol{closed: nil} })
+	srv, err := NewRPCServer(conns, func() SessionProtocol { return &MyProtocol{closed: nil} }, &DummyLogger{})
 	if err != nil {
 		b.Error(err)
 		return

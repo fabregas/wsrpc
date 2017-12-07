@@ -19,14 +19,23 @@ type RPCClient struct {
 
 	protDetails *protocolDetails
 	onNotifFunc OnNotificationFunc
+
+	log Logger
 }
 
-func NewRPCClient(conn RPCTransport, p SessionProtocol, timeout time.Duration, onNotifFunc OnNotificationFunc) (*RPCClient, error) {
+func NewRPCClient(
+	conn RPCTransport,
+	p SessionProtocol,
+	timeout time.Duration,
+	onNotifFunc OnNotificationFunc,
+	log Logger,
+) (*RPCClient, error) {
 	cli := &RPCClient{
 		conn:          conn,
 		flow:          NewFlowController(timeout),
 		notifications: make(chan *Packet, 100),
 		onNotifFunc:   onNotifFunc,
+		log:           log,
 	}
 	pdetails, err := parseSessionProtocol(p)
 	if err != nil {
@@ -103,10 +112,12 @@ func (cli *RPCClient) onNotif(packet *Packet) {
 	case cli.notifications <- packet:
 	default:
 		// drop notifiaction if nobody recvs it
+		cli.log.Warning("notification dropped bcs no free room in channel")
 	}
 }
 
 func (cli *RPCClient) loop() {
+	cli.log.Debug("rpc client read loop started")
 	for {
 		select {
 		case packet := <-cli.conn.Recv():
@@ -125,12 +136,12 @@ func (cli *RPCClient) loop() {
 				cli.onNotif(packet)
 
 			default:
-				fmt.Printf("ERROR: unexpected packet type <%s>\n", packet.Header.Type) //FIXME logging
+				cli.log.Errorf("[cli.loop] unexpected packet type <%s>", packet.Header.Type)
 			}
 
 		case err := <-cli.conn.Closed():
 			if err != nil {
-				fmt.Println("cli.loop() closed with error: ", err)
+				cli.log.Infof("[cli.loop] closed with error: %s", err.Error())
 			}
 			close(cli.notifications)
 			atomic.StoreInt32(&cli.closedFlag, 1)

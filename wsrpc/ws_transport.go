@@ -27,9 +27,11 @@ type WsTransport struct {
 	pingTicker *time.Ticker
 	pongWait   time.Duration
 	writeWait  time.Duration
+
+	log Logger
 }
 
-func NewWsTransport(c *websocket.Conn) *WsTransport {
+func NewWsTransport(c *websocket.Conn, log Logger) *WsTransport {
 	pongWait := 60 * time.Second  //FIXME
 	writeWait := 10 * time.Second //FIXME
 
@@ -44,6 +46,7 @@ func NewWsTransport(c *websocket.Conn) *WsTransport {
 		pingTicker: ticker,
 		pongWait:   pongWait,
 		writeWait:  writeWait,
+		log:        log,
 	}
 	go t.readLoop()
 	go t.pingLoop()
@@ -111,7 +114,7 @@ func (t *WsTransport) readLoop() {
 
 		p, err := ParsePacket(raw)
 		if err != nil {
-			fmt.Printf("Parse packet error: %s\n", err)
+			t.log.Errorf("parse packet error: %s", err)
 			t.closedCh <- err
 			break
 		}
@@ -134,15 +137,17 @@ func (t *WsTransport) pingLoop() {
 type WsHandler struct {
 	conns    chan RPCTransport
 	upgrader websocket.Upgrader
+	log      Logger
 }
 
-func NewWsHandler() *WsHandler {
+func NewWsHandler(log Logger) *WsHandler {
 	return &WsHandler{
-		make(chan RPCTransport),
-		websocket.Upgrader{
+		conns: make(chan RPCTransport),
+		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
 		},
+		log: log,
 	}
 }
 
@@ -153,19 +158,20 @@ func (h *WsHandler) Connections() <-chan RPCTransport {
 func (h *WsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		fmt.Println(err) //FIXME logging
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprintf(w, "websocket upgrade fails: %s", err.Error())
 		return
 	}
-	h.conns <- NewWsTransport(conn)
+	h.conns <- NewWsTransport(conn, h.log)
 }
 
-func NewWsConn(url string) (*WsTransport, error) {
+func NewWsConn(url string, log Logger) (*WsTransport, error) {
 	dialer := &websocket.Dialer{}
 	conn, resp, err := dialer.Dial(url, http.Header{})
 	if err != nil {
-		fmt.Println(resp) // FIXME
+		log.Debugf("response: %s", resp)
 		return nil, err
 	}
 
-	return NewWsTransport(conn), nil
+	return NewWsTransport(conn, log), nil
 }
