@@ -103,6 +103,11 @@ func TestRPCBothSide(t *testing.T) {
 	}
 
 	// check client helper
+	_, err = ClientWSRPC(&MyProtocol{}, "ws://127.0.0.1:8080/err", 1*time.Second, onNotifFunc, &DummyLogger{})
+	if err == nil {
+		t.Error(err)
+		return
+	}
 	c, err := ClientWSRPC(&MyProtocol{}, "ws://127.0.0.1:8080/test/wsrpc", 1*time.Second, onNotifFunc, &DummyLogger{})
 	if err != nil {
 		t.Error(err)
