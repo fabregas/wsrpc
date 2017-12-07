@@ -1,4 +1,6 @@
 # wsrpc
+[![Build Status](https://travis-ci.org/fabregas/wsrpc.svg?branch=master)](https://travis-ci.org/fabregas/wsrpc)
+[![Coverage Status](https://coveralls.io/repos/github/fabregas/wsrpc/badge.svg?branch=master)](https://coveralls.io/github/fabregas/wsrpc?branch=master)
 
 `wsrpc` is a Go package which allows you to construct session based RPC over websocket connection (client and server sides).
 
