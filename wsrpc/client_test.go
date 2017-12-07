@@ -102,6 +102,14 @@ func TestRPCBothSide(t *testing.T) {
 		return
 	}
 
+	// check client helper
+	c, err := ClientWSRPC(&MyProtocol{}, "ws://127.0.0.1:8080/test/wsrpc", 1*time.Second, onNotifFunc, &DummyLogger{})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	c.Close()
+
 	close(closech)
 	time.Sleep(100 * time.Millisecond)
 
