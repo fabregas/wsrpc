@@ -30,6 +30,9 @@ func NewRPCClient(
 	onNotifFunc OnNotificationFunc,
 	log Logger,
 ) (*RPCClient, error) {
+	if conn == nil {
+		return nil, fmt.Errorf("Nil RPCTransport passed")
+	}
 	cli := &RPCClient{
 		conn:          conn,
 		flow:          NewFlowController(timeout),
@@ -99,6 +102,10 @@ func (cli *RPCClient) Close() error {
 
 func (cli *RPCClient) notifLoop() {
 	for packet := range cli.notifications {
+		if cli.onNotifFunc == nil {
+			// just ignore notification
+			continue
+		}
 		vt, ok := cli.protDetails.notifications[packet.Header.Method]
 		if !ok {
 			cli.onNotifFunc(nil, fmt.Errorf("unexpected notification %s", packet.Header.Method))

@@ -40,8 +40,8 @@ func (p *MyProtocol) OnDisconnect(err error) {
 	p.closed <- true
 }
 func (p *MyProtocol) MyMethod(req *SomeReq) (*SomeResp, error) {
-	if req.Name == "" {
-		return nil, fmt.Errorf("empty name!")
+	if req.Name == "Bad" {
+		return nil, fmt.Errorf("bad name!")
 	}
 
 	if req.Name == "Bob" {

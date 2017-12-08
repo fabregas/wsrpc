@@ -55,7 +55,7 @@ func TestAbstractRPC(t *testing.T) {
 	}
 
 	// check method error
-	req = NewPacket(PT_REQUEST, "MyMethod", []byte("{\"name\":\"\"}"))
+	req = NewPacket(PT_REQUEST, "MyMethod", []byte("{\"name\":\"Bad\"}"))
 	conn.in <- req
 	p = <-conn.out
 	if string(p.Header.MessageId) != string(req.Header.MessageId) {
@@ -66,7 +66,7 @@ func TestAbstractRPC(t *testing.T) {
 		t.Error("invalid err type")
 		return
 	}
-	if string(p.Body) != "empty name!" {
+	if string(p.Body) != "bad name!" {
 		t.Error("invalid err body")
 		return
 	}

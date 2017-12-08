@@ -2,6 +2,7 @@ package wsrpc
 
 import (
 	_ "fmt"
+	"io"
 	"testing"
 	"time"
 )
@@ -59,8 +60,8 @@ func TestRPCBothSide(t *testing.T) {
 	}
 
 	// check rpc method error
-	respI, err = cli.Call("MyMethod", &SomeReq{})
-	if err.Error() != "empty name!" {
+	respI, err = cli.Call("MyMethod", &SomeReq{"Bad"})
+	if err.Error() != "bad name!" {
 		t.Error(err)
 		return
 	}
@@ -133,6 +134,79 @@ func TestRPCBothSide(t *testing.T) {
 		t.Error("expected closed cli conn")
 		return
 	}
+}
+
+type sprot struct{}
+
+func (p sprot) OnConnect(io.Closer, *RPCNotifier) {}
+func (p sprot) OnDisconnect(error)                {}
+
+type sprotWithErrMethodType struct {
+	sprot
+	Notifications struct{}
+}
+type inType struct{ IsBob chan int }
+type outType struct{ G int }
+
+func (p *sprotWithErrMethodType) InvalidMethodType(i *inType) (*outType, error) { return nil, nil }
+func (p *sprotWithErrMethodType) MyMethod(i *outType) (*inType, error)          { return nil, nil }
+
+func TestNegativeCases(t *testing.T) {
+	// bad transport
+	_, err := NewRPCClient(nil, &sprot{}, 1*time.Second, nil, &DummyLogger{})
+	if err.Error() != "Nil RPCTransport passed" {
+		t.Error(err)
+		return
+	}
+
+	closech := make(chan struct{})
+	go ServeWSRPC(func() SessionProtocol { return &MyProtocol{} }, ":8080", "/test/wsrpc", &DummyLogger{LL_INFO}, closech)
+	time.Sleep(100 * time.Millisecond)
+
+	tr, err := NewWsConn("ws://127.0.0.1:8080/test/wsrpc", &DummyLogger{})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	_, err = NewRPCClient(tr, &sprot{}, 1*time.Second, nil, &DummyLogger{})
+	if err.Error() != "no Notifications declaration found in session protocol" {
+		t.Error(err)
+		return
+	}
+
+	cli, err := NewRPCClient(tr, &sprotWithErrMethodType{}, 1*time.Second, nil, &DummyLogger{})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	_, err = cli.Call("InvalidMethodType", &inType{make(chan int)})
+	if err.Error() != "json: unsupported type: chan int" {
+		t.Error(err)
+		return
+	}
+
+	_, err = cli.Call("MyMethod", &outType{55})
+	if err.Error() != "json: cannot unmarshal bool into Go struct field inType.IsBob of type chan int" {
+		t.Error(err)
+		return
+	}
+	cli.Close()
+
+	onNotifFunc := func(n interface{}, err error) {
+		if err == nil {
+			t.Error("expected notif err")
+		}
+	}
+	tr, err = NewWsConn("ws://127.0.0.1:8080/test/wsrpc", &DummyLogger{})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	cli, err = NewRPCClient(tr, &sprotWithErrMethodType{}, 1*time.Second, onNotifFunc, &DummyLogger{})
+
+	time.Sleep(100 * time.Millisecond)
+	cli.Close()
+	close(closech)
 }
 
 func BenchmarkManyConns100(b *testing.B) {
