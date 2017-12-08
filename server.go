@@ -45,10 +45,11 @@ func (n *RPCNotifier) Notify(notification interface{}) error {
 type RPCServer struct {
 	conns <-chan RPCTransport
 
-	protocol    NewSessionFunc
-	protDetails *protocolDetails
+	protocol NewSessionFunc
 
-	finishCh chan struct{}
+	protDetails *protocolDetails
+	wp          *workersPool
+	finishCh    chan struct{}
 
 	log Logger
 }
@@ -67,6 +68,7 @@ func NewRPCServer(conns <-chan RPCTransport, f NewSessionFunc, log Logger) (*RPC
 	if err != nil {
 		return nil, err
 	}
+	rpc.wp = &workersPool{jobs: make(chan job), log: log, protDetails: pdetails}
 	rpc.protDetails = pdetails
 	rpc.protocol = f
 	return rpc, nil
@@ -81,6 +83,7 @@ func (rpc *RPCServer) Run() {
 
 func (rpc *RPCServer) Close() {
 	close(rpc.finishCh)
+	rpc.wp.Close()
 }
 
 func (rpc *RPCServer) procConn(conn RPCTransport) {
@@ -90,71 +93,34 @@ func (rpc *RPCServer) procConn(conn RPCTransport) {
 	notifier := &RPCNotifier{rpc.protDetails, respCh}
 	prot.OnConnect(conn, notifier)
 
-	readFunc := func() {
+	// sender goroutine
+	go func() {
 		for {
-			packet, err := conn.Recv()
-			if err != nil {
-				rpc.log.Debugf("returning rpc.readFunc() with err: %s", err.Error())
-				prot.OnDisconnect(err)
+			select {
+			case retPacket := <-respCh:
+				err := conn.Send(retPacket)
+				if err != nil {
+					// logging error
+					rpc.log.Errorf("can't send packet to client: %s", err.Error())
+					return
+				}
+
+			case <-rpc.finishCh:
+				conn.Close()
 				return
 			}
-
-			go rpc.callMethod(prot, packet, respCh) //TODO maybe worker pool should be implemented
 		}
-	}
-	go readFunc()
+	}()
 
 	for {
-		select {
-		case retPacket := <-respCh:
-			err := conn.Send(retPacket)
-			if err != nil {
-				// logging error
-				rpc.log.Errorf("can't send packet to client: %s", err.Error())
-				return
-			}
-
-		case <-rpc.finishCh:
-			conn.Close()
+		packet, err := conn.Recv()
+		if err != nil {
+			rpc.log.Debugf("returning rpc.procConn() with err: %s", err.Error())
+			prot.OnDisconnect(err)
 			return
 		}
-	}
-}
 
-func (rpc *RPCServer) callMethod(p SessionProtocol, packet *Packet, respCh chan<- *Packet) {
-	m, ok := rpc.protDetails.methods[packet.Header.Method] //FIXME lock (?)
-	if !ok {
-		respCh <- packet.Error(
-			fmt.Errorf("no method %s found", packet.Header.Method),
-		)
-		return
+		// proc request in workers pool
+		rpc.wp.Process(job{prot, packet, respCh})
 	}
-
-	inV := reflect.New(m.inType)
-	err := json.Unmarshal(packet.Body, inV.Interface())
-	if err != nil {
-		respCh <- packet.Error(err)
-		return
-	}
-
-	ret := m.funcVal.Call([]reflect.Value{reflect.ValueOf(p), inV})
-
-	var buf []byte
-	if !ret[1].IsNil() { // check error
-		respCh <- packet.Error(ret[1].Interface().(error))
-		return
-	}
-
-	buf, err = json.Marshal(ret[0].Interface())
-	if err != nil {
-		respCh <- packet.Error(err)
-		return
-	}
-
-	h := Header{
-		MessageId: packet.Header.MessageId,
-		Type:      PT_RESPONSE,
-		Method:    packet.Header.Method,
-	}
-	respCh <- &Packet{Header: h, Body: buf}
 }

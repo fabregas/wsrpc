@@ -37,6 +37,33 @@ func BenchmarkWsRPCServer(b *testing.B) {
 	close(closech)
 }
 
+func BenchmarkWsRPCServerParallel(b *testing.B) {
+	closech := make(chan struct{})
+	log := &DummyLogger{LL_ERROR}
+	go ServeWSRPC(func() SessionProtocol { return &MyProtocol{} }, ":8080", "/test/wsrpc", log, closech)
+	time.Sleep(1 * time.Second)
+	/////////////
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		cli, err := NewWsConn("ws://127.0.0.1:8080/test/wsrpc", &DummyLogger{})
+		if err != nil {
+			panic(err)
+		}
+		cli.Recv() //recv notification
+		p := NewPacket(PT_REQUEST, "MyMethod", []byte("{\"name\":\"Bob\"}"))
+
+		for pb.Next() {
+			// The loop body is executed b.N times total across all goroutines.
+			cli.Send(p)
+			cli.Recv()
+		}
+		cli.Close()
+	})
+	b.StopTimer()
+	close(closech)
+}
+
 func BenchmarkRawWsServer(b *testing.B) {
 	wsfunc := func(w http.ResponseWriter, r *http.Request) {
 		var upgrader = websocket.Upgrader{
