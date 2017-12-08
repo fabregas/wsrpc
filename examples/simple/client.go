@@ -1,7 +1,7 @@
 package main
 
 import (
-	"../../wsrpc"
+	"../.."
 	"./protocol"
 
 	"fmt"

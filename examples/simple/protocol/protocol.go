@@ -1,7 +1,7 @@
 package protocol
 
 import (
-	"../../../wsrpc"
+	"../../../"
 
 	"fmt"
 	"io"
