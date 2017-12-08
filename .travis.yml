@@ -15,5 +15,5 @@ before_install:
   - go get github.com/mattn/goveralls
 
 script:
-  - go test -cover -coverprofile=coverage.out -v ./wsrpc/
+  - go test -cover -coverprofile=coverage.out -v .
   - goveralls -coverprofile=coverage.out -service travis-ci
