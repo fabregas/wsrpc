@@ -3,22 +3,24 @@ package wsrpc
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"reflect"
 )
 
-// RPCNotifier implements notifications sender from server to client
-type RPCNotifier struct {
+// RPCConn implements notifications sender from server to client and connection closer
+type RPCConn struct {
 	protDetails *protocolDetails
 	notifChan   chan *Packet
+	closer      io.Closer
 }
 
-func (n *RPCNotifier) Notify(notification interface{}) error {
+func (c *RPCConn) Notify(notification interface{}) error {
 	// check type of notification
 	nt := reflect.TypeOf(notification)
 	if nt.Kind() == reflect.Ptr {
 		nt = nt.Elem()
 	}
-	vt, ok := n.protDetails.notifications[nt.Name()]
+	vt, ok := c.protDetails.notifications[nt.Name()]
 	if !ok || vt != nt {
 		return fmt.Errorf("Notification %s is not declared in protocol", reflect.TypeOf(notification))
 	}
@@ -31,14 +33,18 @@ func (n *RPCNotifier) Notify(notification interface{}) error {
 
 	p := NewPacket(PT_NOTIFICATION, nt.Name(), buf)
 	select {
-	case n.notifChan <- p:
+	case c.notifChan <- p:
 	default:
 		go func() {
-			n.notifChan <- p
+			c.notifChan <- p
 		}()
 	}
 
 	return nil
+}
+
+func (c *RPCConn) Close() error {
+	return c.closer.Close()
 }
 
 //RPCServer implements RPC server protocol handler
@@ -86,19 +92,23 @@ func (rpc *RPCServer) Close() {
 	rpc.wp.Close()
 }
 
-func (rpc *RPCServer) procConn(conn RPCTransport) {
+func (rpc *RPCServer) procConn(tr RPCTransport) {
 	rpc.log.Debugf("new connection established")
 	prot := rpc.protocol()
 	respCh := make(chan *Packet)
-	notifier := &RPCNotifier{rpc.protDetails, respCh}
-	prot.OnConnect(conn, notifier)
+	prot.OnConnect(&RPCConn{rpc.protDetails, respCh, tr})
 
 	// sender goroutine
 	go func() {
 		for {
 			select {
 			case retPacket := <-respCh:
-				err := conn.Send(retPacket)
+				if retPacket == nil {
+					// connection is closed, just finish this goroutine
+					return
+				}
+
+				err := tr.Send(retPacket)
 				if err != nil {
 					// logging error
 					rpc.log.Errorf("can't send packet to client: %s", err.Error())
@@ -106,17 +116,18 @@ func (rpc *RPCServer) procConn(conn RPCTransport) {
 				}
 
 			case <-rpc.finishCh:
-				conn.Close()
+				tr.Close()
 				return
 			}
 		}
 	}()
 
 	for {
-		packet, err := conn.Recv()
+		packet, err := tr.Recv()
 		if err != nil {
 			rpc.log.Debugf("returning rpc.procConn() with err: %s", err.Error())
 			prot.OnDisconnect(err)
+			respCh <- nil
 			return
 		}
 

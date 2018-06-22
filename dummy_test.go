@@ -2,7 +2,6 @@ package wsrpc
 
 import (
 	"fmt"
-	"io"
 	"time"
 )
 
@@ -22,18 +21,17 @@ type MyNotif struct {
 }
 
 type MyProtocol struct {
-	closed   chan bool
-	notifier *RPCNotifier
+	closed chan bool
+	conn   *RPCConn
 
 	Notifications struct {
 		*MyNotif
 	}
 }
 
-func (p *MyProtocol) OnConnect(closer io.Closer, notifier *RPCNotifier) {
-	//fmt.Println("ON CONNECT =>", closer, notifier)
-	notifier.Notify(&MyNotif{"hello, dude!"})
-	p.notifier = notifier
+func (p *MyProtocol) OnConnect(conn *RPCConn) {
+	conn.Notify(&MyNotif{"hello, dude!"})
+	p.conn = conn
 }
 func (p *MyProtocol) OnDisconnect(err error) {
 	//fmt.Println("ON DISCONNECT => ", err)
@@ -56,7 +54,7 @@ func (p *MyProtocol) MySleep(req *SomeReq) (*SomeResp, error) {
 }
 
 func (p *MyProtocol) EmitInvalidNotification(req *SomeReq) (*SomeResp, error) {
-	err := p.notifier.Notify(&SomeResp{})
+	err := p.conn.Notify(&SomeResp{})
 	return nil, err
 }
 

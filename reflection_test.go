@@ -1,7 +1,6 @@
 package wsrpc
 
 import (
-	"io"
 	"testing"
 )
 
@@ -11,8 +10,8 @@ type RespTest struct{ B float64 }
 
 type SProt struct{}
 
-func (p SProt) OnConnect(io.Closer, *RPCNotifier) {}
-func (p SProt) OnDisconnect(error)                {}
+func (p SProt) OnConnect(*RPCConn) {}
+func (p SProt) OnDisconnect(error) {}
 
 type SProtWithErrNotify struct {
 	SProt

@@ -35,9 +35,9 @@ type SumProtocol struct {
 	}
 }
 
-func (p *SumProtocol) OnConnect(closer io.Closer, notifier *wsrpc.RPCNotifier) {
+func (p *SumProtocol) OnConnect(conn *wsrpc.RPCConn) {
 	fmt.Println("Some client connected ...")
-	err := notifier.Notify(
+	err := conn.Notify(
 		&ExampleNotif{
 			"hello, dude!",
 			"you can sum any two natural numbers using this API",
@@ -45,8 +45,10 @@ func (p *SumProtocol) OnConnect(closer io.Closer, notifier *wsrpc.RPCNotifier) {
 	)
 	if err != nil {
 		fmt.Println("send notification error: ", err)
+		conn.Close()
 	}
 }
+
 func (p *SumProtocol) OnDisconnect(err error) {
 	fmt.Printf("Client is disconnected (err=%v)\n", err)
 }

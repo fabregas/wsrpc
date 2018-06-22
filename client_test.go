@@ -2,7 +2,6 @@ package wsrpc
 
 import (
 	_ "fmt"
-	"io"
 	"testing"
 	"time"
 )
@@ -138,8 +137,8 @@ func TestRPCBothSide(t *testing.T) {
 
 type sprot struct{}
 
-func (p sprot) OnConnect(io.Closer, *RPCNotifier) {}
-func (p sprot) OnDisconnect(error)                {}
+func (p sprot) OnConnect(*RPCConn) {}
+func (p sprot) OnDisconnect(error) {}
 
 type sprotWithErrMethodType struct {
 	sprot
